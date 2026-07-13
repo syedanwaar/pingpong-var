@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ping Pong VAR</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">PP<span>VAR</span></div>
+    <div class="score" id="scoreline">—</div>
+    <div class="status-pill" id="statusPill">boot</div>
+  </header>
+
+  <main class="layout">
+    <section class="stage">
+      <div class="video-wrap">
+        <img id="stream" src="/api/stream" alt="Live feed" />
+        <canvas id="overlay"></canvas>
+      </div>
+      <div class="call-banner" id="callBanner" hidden></div>
+      <div class="hint" id="hint">Click 4 table corners in order: TL → TR → BR → BL</div>
+    </section>
+
+    <aside class="panel">
+      <section class="card">
+        <h2>Score</h2>
+        <div class="names">
+          <input id="nameA" value="Player A" />
+          <input id="nameB" value="Player B" />
+          <button id="saveNames">Save names</button>
+        </div>
+        <div class="score-btns">
+          <button class="big a" data-side="A">+ Point A</button>
+          <button class="big b" data-side="B">+ Point B</button>
+        </div>
+        <div class="row">
+          <button id="undo">Undo</button>
+          <button id="resetGame">Reset game</button>
+          <button id="resetMatch">Reset match</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Referee</h2>
+        <label class="toggle">
+          <input type="checkbox" id="autoCall" checked />
+          Auto in/out on bounce
+        </label>
+        <div class="row">
+          <button id="calibrate">Recalibrate table</button>
+          <button id="clearTable">Clear table</button>
+        </div>
+        <p class="muted">Or click the video after calibration to force a call at that spot.</p>
+      </section>
+
+      <section class="card">
+        <h2>Phone camera</h2>
+        <input id="cameraUrl" placeholder="http://192.168.x.x:8080/video" />
+        <button id="saveCamera">Connect phone</button>
+        <p class="muted">Use Android <b>IP Webcam</b> → Start server → paste the <code>/video</code> URL. Same Wi‑Fi as this PC.</p>
+      </section>
+
+      <section class="card">
+        <h2>Ball color (HSV)</h2>
+        <div class="hsv-grid">
+          <label>H<sub>lo</sub><input type="number" id="hLo" value="5" /></label>
+          <label>S<sub>lo</sub><input type="number" id="sLo" value="100" /></label>
+          <label>V<sub>lo</sub><input type="number" id="vLo" value="100" /></label>
+          <label>H<sub>hi</sub><input type="number" id="hHi" value="25" /></label>
+          <label>S<sub>hi</sub><input type="number" id="sHi" value="255" /></label>
+          <label>V<sub>hi</sub><input type="number" id="vHi" value="255" /></label>
+        </div>
+        <button id="saveHsv">Apply HSV</button>
+      </section>
+
+      <section class="card">
+        <h2>Replay review</h2>
+        <button id="saveReplay">Save last 8s challenge</button>
+        <ul id="replayList" class="replay-list"></ul>
+        <video id="replayPlayer" controls playsinline></video>
+      </section>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

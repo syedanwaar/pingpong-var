@@ -1,0 +1,23 @@
+# Point this at your Android phone stream.
+# IP Webcam (Android): install "IP Webcam" from Play Store, start server,
+# then set camera_url to http://PHONE_IP:8080/video
+camera_url: "http://192.168.1.100:8080/video"
+
+# Fallback to a local webcam index if camera_url fails / for desk testing
+camera_index: 0
+prefer_phone: true
+
+# Ball color in HSV (orange ping-pong ball defaults; tweak via /calibrate UI)
+ball_hsv_lower: [5, 100, 100]
+ball_hsv_upper: [25, 255, 255]
+
+# Replay buffer length in seconds
+replay_seconds: 8
+replay_fps: 20
+
+# Frame processing
+process_width: 960
+
+# Score
+points_to_win: 11
+must_win_by: 2
