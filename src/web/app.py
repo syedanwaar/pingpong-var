@@ -12,8 +12,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from src.config import ROOT, load_config, save_config
+from src.config import load_config, save_config
 from src.engine import VAREngine
+from src.scoring.models import MatchStatus
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pingpong-var")
@@ -37,6 +38,7 @@ class NetBody(BaseModel):
 class PointBody(BaseModel):
     side: str
     reason: str = ""
+    source: str = "manual"
 
 
 class NamesBody(BaseModel):
@@ -59,6 +61,18 @@ class CameraBody(BaseModel):
     prefer_phone: bool = True
 
 
+class StartMatchBody(BaseModel):
+    player_a: str = "Player A"
+    player_b: str = "Player B"
+    best_of: int = 5
+    first_server: str = "A"  # A | B | random
+
+
+class ReviewBody(BaseModel):
+    decision: str  # uphold | overturn | void
+    point_id: Optional[str] = None
+
+
 @app.on_event("startup")
 def _startup() -> None:
     engine.start()
@@ -71,14 +85,19 @@ def _shutdown() -> None:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> Any:
-    return TEMPLATES.TemplateResponse("index.html", {"request": request})
+    return TEMPLATES.TemplateResponse(request, "index.html")
 
 
 @app.get("/api/status")
 def status() -> dict:
+    snap = engine.match.snapshot()
+    match = snap.get("match") or {}
     return {
         **engine.status,
-        "score": engine.score.snapshot(),
+        "score": snap,
+        "match": match,
+        "summary": snap.get("summary"),
+        "timeline": match.get("timeline") or [],
         "table_ready": engine.referee.table.ready(),
         "auto_call": engine.auto_call,
         "pending_point_side": engine.pending_point_side,
@@ -86,6 +105,8 @@ def status() -> dict:
         "config": {
             "camera_url": engine.cfg.get("camera_url"),
             "prefer_phone": engine.cfg.get("prefer_phone"),
+            "match": engine.cfg.get("match") or {},
+            "review": engine.cfg.get("review") or {},
         },
     }
 
@@ -105,6 +126,43 @@ def stream() -> StreamingResponse:
             time.sleep(0.04)
 
     return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.post("/api/match/start")
+def start_match(body: StartMatchBody) -> dict:
+    allowed = (engine.cfg.get("match") or {}).get("allowed_formats") or [3, 5, 7]
+    if body.best_of not in allowed:
+        raise HTTPException(400, f"best_of must be one of {allowed}")
+    try:
+        st = engine.match.start_match(
+            player_a=body.player_a,
+            player_b=body.player_b,
+            best_of=body.best_of,
+            first_server=body.first_server,
+            points_to_win_game=engine.points_to_win_game,
+            must_win_by=engine.must_win_by,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "match": st.to_dict()}
+
+
+@app.post("/api/match/new")
+def new_match() -> dict:
+    st = engine.match.new_match()
+    return {"ok": True, "match": st.to_dict()}
+
+
+@app.get("/api/match/summary")
+def match_summary() -> dict:
+    return engine.match.summary().to_dict()
+
+
+@app.get("/api/matches")
+def list_matches() -> dict:
+    if engine.match.persistence is None:
+        return {"matches": []}
+    return {"matches": engine.match.persistence.list_matches()}
 
 
 @app.post("/api/table/corners")
@@ -134,34 +192,75 @@ def manual_call(body: ManualCallBody) -> dict:
 
 @app.post("/api/score/point")
 def score_point(body: PointBody) -> dict:
-    event = engine.score.point(body.side, body.reason)
+    try:
+        st = engine.match.award_point(
+            body.side, source=body.source or "manual", reason=body.reason, attach_replay=True
+        )
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc)) from exc
     engine.pending_point_side = None
-    return event
+    return {"ok": True, "match": st.to_dict(), "score": engine.match.snapshot()}
 
 
 @app.post("/api/score/undo")
 def score_undo() -> dict:
-    last = engine.score.undo()
-    return {"ok": True, "undone": last, "score": engine.score.snapshot()}
-
-
-@app.post("/api/score/reset-game")
-def reset_game() -> dict:
-    engine.score.reset_game()
-    return {"ok": True, "score": engine.score.snapshot()}
+    st = engine.match.undo()
+    return {"ok": True, "match": st.to_dict(), "score": engine.match.snapshot()}
 
 
 @app.post("/api/score/reset-match")
 def reset_match() -> dict:
-    engine.score.reset_match()
-    return {"ok": True, "score": engine.score.snapshot()}
+    st = engine.match.new_match()
+    return {"ok": True, "match": st.to_dict(), "score": engine.match.snapshot()}
 
 
 @app.post("/api/score/names")
 def set_names(body: NamesBody) -> dict:
-    engine.score.player_a = body.player_a
-    engine.score.player_b = body.player_b
-    return {"ok": True, "score": engine.score.snapshot()}
+    # Names apply on next start_match; keep endpoint for compatibility.
+    return {
+        "ok": True,
+        "hint": "Use /api/match/start to set names for a new match",
+        "player_a": body.player_a,
+        "player_b": body.player_b,
+    }
+
+
+@app.post("/api/review/request")
+def review_request(point_id: Optional[str] = None) -> dict:
+    try:
+        st = engine.match.request_review(point_id)
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    entry = next((t for t in st.timeline if t.point_id == st.pending_review_point_id), None)
+    clip_url = None
+    message = None
+    if entry and entry.clip_id:
+        clip_url = f"/api/replay/{entry.clip_id}"
+    else:
+        message = "Replay clip unavailable. Manual decision required."
+    return {
+        "ok": True,
+        "match": st.to_dict(),
+        "point_id": st.pending_review_point_id,
+        "clip_url": clip_url,
+        "message": message,
+        "entry": entry.to_dict() if entry else None,
+    }
+
+
+@app.post("/api/review/resolve")
+def review_resolve(body: ReviewBody) -> dict:
+    try:
+        st = engine.match.resolve_review(body.decision, body.point_id)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "ok": True,
+        "match": st.to_dict(),
+        "summary": engine.match.summary().to_dict()
+        if st.match_status == MatchStatus.COMPLETED
+        else None,
+    }
 
 
 @app.post("/api/auto-call")

@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.yaml"
 DATA_DIR = ROOT / "data"
 REPLAY_DIR = DATA_DIR / "replays"
+MATCHES_DIR = DATA_DIR / "matches"
 
 
 def load_config() -> dict[str, Any]:

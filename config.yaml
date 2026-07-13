@@ -5,7 +5,7 @@ camera_url: "http://192.168.1.100:8080/video"
 
 # Fallback to a local webcam index if camera_url fails / for desk testing
 camera_index: 0
-prefer_phone: true
+prefer_phone: false
 
 # Ball color in HSV (white ping-pong ball defaults; tweak in the web UI)
 # White = low saturation, high brightness — Hue is mostly ignored when S is low
@@ -19,6 +19,21 @@ replay_fps: 20
 # Frame processing
 process_width: 960
 
-# Score
+# Legacy flat keys (still read as fallbacks)
 points_to_win: 11
 must_win_by: 2
+
+match:
+  default_best_of: 5
+  allowed_formats:
+    - 3
+    - 5
+    - 7
+  points_to_win_game: 11
+  must_win_by: 2
+
+review:
+  enabled: true
+  review_latest_point_only: true
+  replay_seconds_before_point: 8
+  replay_seconds_after_point: 2

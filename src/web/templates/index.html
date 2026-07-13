@@ -9,7 +9,7 @@
 <body>
   <header class="top">
     <div class="brand">PP<span>VAR</span></div>
-    <div class="score" id="scoreline">—</div>
+    <div class="score" id="scoreline">Start a match to begin</div>
     <div class="status-pill" id="statusPill">boot</div>
   </header>
 
@@ -21,25 +21,68 @@
       </div>
       <div class="call-banner" id="callBanner" hidden></div>
       <div class="hint" id="hint">Click 4 table corners in order: TL → TR → BR → BL</div>
+      <div class="ends-bar" id="endsBar"></div>
     </section>
 
     <aside class="panel">
-      <section class="card">
-        <h2>Score</h2>
+      <section class="card" id="setupCard">
+        <h2>Start match</h2>
         <div class="names">
-          <input id="nameA" value="Player A" />
-          <input id="nameB" value="Player B" />
-          <button id="saveNames">Save names</button>
+          <input id="nameA" value="Player A" placeholder="Player A" />
+          <input id="nameB" value="Player B" placeholder="Player B" />
         </div>
+        <label class="field">Best of
+          <select id="bestOf">
+            <option value="3">Best of 3</option>
+            <option value="5" selected>Best of 5</option>
+            <option value="7">Best of 7</option>
+          </select>
+        </label>
+        <label class="field">First server
+          <select id="firstServer">
+            <option value="A">Player A</option>
+            <option value="B">Player B</option>
+            <option value="random">Random</option>
+          </select>
+        </label>
+        <button id="startMatch" class="primary">Start match</button>
+      </section>
+
+      <section class="card" id="liveCard">
+        <h2>Live scoring</h2>
+        <div id="liveMeta" class="muted">No match in progress</div>
         <div class="score-btns">
-          <button class="big a" data-side="A">+ Point A</button>
-          <button class="big b" data-side="B">+ Point B</button>
+          <button class="big a" data-side="A" id="pointA">+ Point A</button>
+          <button class="big b" data-side="B" id="pointB">+ Point B</button>
         </div>
         <div class="row">
           <button id="undo">Undo</button>
-          <button id="resetGame">Reset game</button>
-          <button id="resetMatch">Reset match</button>
+          <button id="reviewBtn">Review</button>
+          <button id="newMatch">New match</button>
         </div>
+      </section>
+
+      <section class="card" id="reviewCard" hidden>
+        <h2>VAR review</h2>
+        <p id="reviewMessage" class="muted"></p>
+        <div id="reviewDetails"></div>
+        <video id="reviewPlayer" controls playsinline></video>
+        <div class="row">
+          <button id="upholdBtn">Uphold</button>
+          <button id="overturnBtn">Overturn</button>
+          <button id="voidBtn">Void / replay</button>
+        </div>
+      </section>
+
+      <section class="card" id="summaryCard" hidden>
+        <h2>Match summary</h2>
+        <div id="summaryBody"></div>
+        <button id="newMatchFromSummary" class="primary">New match</button>
+      </section>
+
+      <section class="card">
+        <h2>Point timeline</h2>
+        <ul id="timeline" class="timeline"></ul>
       </section>
 
       <section class="card">
@@ -59,7 +102,7 @@
         <h2>Phone camera</h2>
         <input id="cameraUrl" placeholder="http://192.168.x.x:8080/video" />
         <button id="saveCamera">Connect phone</button>
-        <p class="muted">Use Android <b>IP Webcam</b> → Start server → paste the <code>/video</code> URL. Same Wi‑Fi as this PC.</p>
+        <p class="muted">Use Android <b>IP Webcam</b> → Start server → paste the <code>/video</code> URL.</p>
       </section>
 
       <section class="card">
@@ -76,7 +119,7 @@
       </section>
 
       <section class="card">
-        <h2>Replay review</h2>
+        <h2>Replay clips</h2>
         <button id="saveReplay">Save last 8s challenge</button>
         <ul id="replayList" class="replay-list"></ul>
         <video id="replayPlayer" controls playsinline></video>

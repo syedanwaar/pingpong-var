@@ -33,39 +33,70 @@ class Camera:
         self.source_label = "none"
         self.last_error = ""
 
-    def open(self) -> bool:
-        sources: list[tuple[str, str | int]] = []
-        if self.prefer_phone:
-            sources.append(("phone", self.camera_url))
-            sources.append(("webcam", self.camera_index))
-        else:
-            sources.append(("webcam", self.camera_index))
-            sources.append(("phone", self.camera_url))
+    def _try_open_one(self, label: str, src: str | int, timeout: float) -> bool:
+        """Open one source with a timeout so dead phone URLs don't hang the server."""
+        box: dict = {"cap": None, "frame": None, "ok": False}
 
-        for label, src in sources:
-            cap = cv2.VideoCapture(src)
-            if not cap.isOpened():
-                cap.release()
-                continue
-            ok, frame = cap.read()
-            if not ok or frame is None:
-                cap.release()
-                continue
-            self._cap = cap
-            self.source_label = label
-            self.last_error = ""
-            self._frame = self._resize(frame)
-            logger.info("Camera opened via %s (%s)", label, src)
-            return True
+        def worker() -> None:
+            try:
+                cap = cv2.VideoCapture(src)
+                if not cap.isOpened():
+                    cap.release()
+                    return
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    cap.release()
+                    return
+                box["cap"] = cap
+                box["frame"] = frame
+                box["ok"] = True
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Camera open error (%s): %s", label, exc)
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        t.join(timeout=timeout)
+        if t.is_alive() or not box["ok"]:
+            # Abandoned worker may still hold a socket briefly; don't block startup.
+            cap = box.get("cap")
+            if cap is not None:
+                try:
+                    cap.release()
+                except Exception:  # noqa: BLE001
+                    pass
+            return False
+
+        self._cap = box["cap"]
+        self.source_label = label
+        self.last_error = ""
+        self._frame = self._resize(box["frame"])
+        logger.info("Camera opened via %s (%s)", label, src)
+        return True
+
+    def open(self, phone_timeout: float = 2.5, webcam_timeout: float = 3.0) -> bool:
+        sources: list[tuple[str, str | int, float]] = []
+        phone = ("phone", self.camera_url, phone_timeout)
+        webcam = ("webcam", self.camera_index, webcam_timeout)
+
+        if self.prefer_phone and self.camera_url:
+            sources.extend([phone, webcam])
+        else:
+            sources.append(webcam)
+            if self.camera_url:
+                sources.append(phone)
+
+        for label, src, timeout in sources:
+            if self._try_open_one(label, src, timeout):
+                return True
 
         self.last_error = "Could not open phone stream or local webcam"
+        self.source_label = "none"
         logger.error(self.last_error)
         return False
 
     def start(self) -> None:
+        """Start capture loop without blocking app startup on a dead camera URL."""
         if self._running:
-            return
-        if self._cap is None and not self.open():
             return
         self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
@@ -81,7 +112,17 @@ class Camera:
 
     def _loop(self) -> None:
         failures = 0
-        while self._running and self._cap is not None:
+        # First open happens here so FastAPI can bind the port immediately.
+        if self._cap is None:
+            self.open()
+
+        while self._running:
+            if self._cap is None:
+                self.last_error = self.last_error or "Waiting for camera..."
+                time.sleep(1.0)
+                self.open()
+                continue
+
             ok, frame = self._cap.read()
             if not ok or frame is None:
                 failures += 1
@@ -89,8 +130,6 @@ class Camera:
                     logger.warning("Camera read failing; attempting reopen")
                     self._cap.release()
                     self._cap = None
-                    if not self.open():
-                        time.sleep(1.0)
                     failures = 0
                 else:
                     time.sleep(0.05)

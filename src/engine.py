@@ -1,4 +1,4 @@
-"""Live pipeline: camera -> track -> referee -> score -> replay."""
+"""Live pipeline: camera -> track -> referee -> match scoring -> replay."""
 
 from __future__ import annotations
 
@@ -11,10 +11,12 @@ import cv2
 import numpy as np
 
 from src.camera import Camera
-from src.config import REPLAY_DIR, load_config
+from src.config import MATCHES_DIR, REPLAY_DIR, load_config
 from src.referee import Call, Referee
 from src.replay import ReplayBuffer
-from src.score import Scoreboard
+from src.scoring.models import MatchStatus
+from src.scoring.persistence import MatchPersistence
+from src.scoring.service import MatchService
 from src.tracker import BallTracker
 
 logger = logging.getLogger(__name__)
@@ -24,6 +26,9 @@ class VAREngine:
     def __init__(self) -> None:
         cfg = load_config()
         self.cfg = cfg
+        match_cfg = cfg.get("match") or {}
+        review_cfg = cfg.get("review") or {}
+
         self.camera = Camera(
             camera_url=cfg.get("camera_url", ""),
             camera_index=int(cfg.get("camera_index", 0)),
@@ -35,24 +40,45 @@ class VAREngine:
             cfg.get("ball_hsv_upper", [180, 50, 255]),
         )
         self.referee = Referee()
-        self.score = Scoreboard(
-            points_to_win=int(cfg.get("points_to_win", 11)),
-            must_win_by=int(cfg.get("must_win_by", 2)),
-        )
         self.replay = ReplayBuffer(
             seconds=float(cfg.get("replay_seconds", 8)),
             fps=int(cfg.get("replay_fps", 20)),
             out_dir=REPLAY_DIR,
         )
+        self.match = MatchService(
+            persistence=MatchPersistence(MATCHES_DIR),
+            clip_saver=self._save_clip_meta,
+            review_enabled=bool(review_cfg.get("enabled", True)),
+            review_latest_only=bool(review_cfg.get("review_latest_point_only", True)),
+        )
+        # Legacy alias used by older call sites.
+        self.score = self.match
+        self.default_best_of = int(match_cfg.get("default_best_of", cfg.get("best_of", 5)))
+        self.points_to_win_game = int(
+            match_cfg.get("points_to_win_game", cfg.get("points_to_win", 11))
+        )
+        self.must_win_by = int(match_cfg.get("must_win_by", cfg.get("must_win_by", 2)))
+
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._frame_jpeg: Optional[bytes] = None
         self._lock = threading.Lock()
         self.auto_call = True
-        self.pending_point_side: Optional[str] = None  # suggested after OUT
+        self.pending_point_side: Optional[str] = None
         self.status: dict[str, Any] = {"state": "idle"}
         self._bounce_cooldown_until = 0.0
         self.trail: list[tuple[int, int]] = []
+
+    def _save_clip_meta(self, label: str) -> Optional[dict[str, Any]]:
+        clip = self.replay.save_clip(label=label)
+        if not clip:
+            return None
+        return {
+            "id": clip.id,
+            "path": clip.path,
+            "buffer_start_ts": clip.created_at - self.replay.seconds,
+            "buffer_end_ts": clip.created_at,
+        }
 
     def start(self) -> None:
         if self._running:
@@ -74,7 +100,6 @@ class VAREngine:
         while self._running:
             frame = self.camera.read()
             if frame is None:
-                # placeholder so MJPEG still works before camera connects
                 placeholder = np.zeros((480, 860, 3), dtype=np.uint8)
                 msg = self.camera.last_error or "Waiting for camera..."
                 cv2.putText(
@@ -111,7 +136,6 @@ class VAREngine:
                     self._bounce_cooldown_until = now + 0.45
                     clip = self.replay.save_clip(label=f"bounce-{decision.call.value}")
                     if decision.call == Call.OUT:
-                        # suggest point to server's opponent is complex; leave manual/suggested B default
                         self.pending_point_side = "A"
                     self.status = {
                         "state": "running",
@@ -124,15 +148,20 @@ class VAREngine:
             for i in range(1, len(self.trail)):
                 cv2.line(annotated, self.trail[i - 1], self.trail[i], (0, 140, 255), 2)
 
-            # HUD
-            s = self.score.snapshot()
-            hud = f"{s['player_a']} {s['a']}  |  {s['b']} {s['player_b']}   serve:{s['serving']}"
+            s = self.match.snapshot()
+            st = s.get("match") or {}
+            status = st.get("match_status", "")
+            hud = (
+                f"{s['player_a']} {s.get('games_a', 0)}({s['a']}) | "
+                f"({s['b']}){s.get('games_b', 0)} {s['player_b']}  "
+                f"serve:{s['serving']}  G{st.get('current_game', 1)} {status}"
+            )
             cv2.putText(
                 annotated,
                 hud,
                 (20, annotated.shape[0] - 20),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
+                0.55,
                 (255, 255, 255),
                 2,
                 cv2.LINE_AA,
