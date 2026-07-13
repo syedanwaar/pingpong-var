@@ -31,8 +31,8 @@ class VAREngine:
             process_width=int(cfg.get("process_width", 960)),
         )
         self.tracker = BallTracker(
-            cfg.get("ball_hsv_lower", [5, 100, 100]),
-            cfg.get("ball_hsv_upper", [25, 255, 255]),
+            cfg.get("ball_hsv_lower", [0, 0, 180]),
+            cfg.get("ball_hsv_upper", [180, 50, 255]),
         )
         self.referee = Referee()
         self.score = Scoreboard(

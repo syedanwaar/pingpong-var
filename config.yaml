@@ -7,9 +7,10 @@ camera_url: "http://192.168.1.100:8080/video"
 camera_index: 0
 prefer_phone: true
 
-# Ball color in HSV (orange ping-pong ball defaults; tweak via /calibrate UI)
-ball_hsv_lower: [5, 100, 100]
-ball_hsv_upper: [25, 255, 255]
+# Ball color in HSV (white ping-pong ball defaults; tweak in the web UI)
+# White = low saturation, high brightness — Hue is mostly ignored when S is low
+ball_hsv_lower: [0, 0, 180]
+ball_hsv_upper: [180, 50, 255]
 
 # Replay buffer length in seconds
 replay_seconds: 8

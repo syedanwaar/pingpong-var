@@ -28,7 +28,7 @@ For desk testing without a phone, the app falls back to your PC webcam (`camera_
 
 1. Point the phone at the full table (tripod helps).
 2. Click the four table corners in order: **TL → TR → BR → BL**.
-3. Tune **HSV** if the ball isn’t tracked (orange ball defaults work in decent light).
+3. Tune **HSV** if the ball isn’t tracked (defaults target **white** balls; raise `V_lo` if lights confuse it, lower `S_hi` if skin/walls get picked up).
 4. Play — auto IN/OUT fires on bounce heuristics; green table overlay shows the legal surface.
 5. Use **Score** buttons for points (or award after an OUT).
 6. Hit **Save last 8s challenge** or rely on auto-saved bounce clips under **Replay review**.
@@ -53,4 +53,4 @@ pingpong-var/
 
 - Bounce detection is velocity-based, not a trained bounce model — expect some false positives/negatives.
 - One camera, no stereo depth; “edge” calls are 2D polygon tests in the camera plane.
-- White balls under bright lights may need HSV tweaks or a differently colored ball for best track.
+- White-ball tracking can confuse bright table lines / reflections — tighten HSV or improve lighting if needed.
